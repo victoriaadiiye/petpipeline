@@ -1,11 +1,12 @@
 # petpipeline
 
-A Go microservices pipeline that ingests pet data over HTTP, buffers it through NATS JetStream, persists it to ClickHouse, and serves it via a query API.
+A Go pipeline that ingests pet data over HTTP, buffers it through NATS JetStream, persists it to ClickHouse, and serves it via a query API.
 
 ```
-HTTP POST /ingest ──▶ NATS JetStream ──▶ Consumer ──▶ ClickHouse
-                                                           │
-                                          GET /pets ◀──── API
+HTTP POST /ingest ──▶ Go Ingestion Service ──▶ NATS JetStream ──▶ Consumer ──▶ ClickHouse
+                                                                                    │   
+                                                                    GET /pets ◀──── API
+                                                                GET /pets/:id ◀──── API
 ```
 
 ## Services
