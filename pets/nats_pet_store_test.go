@@ -1,0 +1,110 @@
+package pets_test
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+	"time"
+
+	natsserver "github.com/nats-io/nats-server/v2/server"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+
+	"petpipeline/pets"
+)
+
+func runTestNATSServer(t *testing.T) *natsserver.Server {
+	t.Helper()
+	opts := &natsserver.Options{
+		JetStream: true,
+		Port:      -1,
+	}
+	srv, err := natsserver.NewServer(opts)
+	if err != nil {
+		t.Fatalf("failed to create NATS server: %v", err)
+	}
+	go srv.Start()
+	if !srv.ReadyForConnections(5 * time.Second) {
+		t.Fatal("NATS server not ready in time")
+	}
+	t.Cleanup(srv.Shutdown)
+	return srv
+}
+
+func setupNatsStore(t *testing.T) (*pets.NatsPetStore, jetstream.JetStream) {
+	t.Helper()
+	srv := runTestNATSServer(t)
+
+	nc, err := nats.Connect(srv.ClientURL())
+	if err != nil {
+		t.Fatalf("failed to connect to NATS: %v", err)
+	}
+	t.Cleanup(nc.Close)
+
+	js, err := jetstream.New(nc)
+	if err != nil {
+		t.Fatalf("failed to create JetStream context: %v", err)
+	}
+
+	_, err = js.CreateStream(context.Background(), jetstream.StreamConfig{
+		Name:     "PETS",
+		Subjects: []string{petSubjectForTest},
+	})
+	if err != nil {
+		t.Fatalf("failed to create stream: %v", err)
+	}
+
+	return pets.NewNatsPetStore(js), js
+}
+
+const petSubjectForTest = "pets.ingest"
+
+func TestNatsPetStore_RecordPet(t *testing.T) {
+	store, js := setupNatsStore(t)
+
+	t.Run("publishes pet to stream and returns true", func(t *testing.T) {
+		pet := pets.Pet{Name: "Buddy", Species: "Dog", Breed: "Labrador", Age: 3, Weight_KG: 30.0}
+		if _, ok := store.RecordPet(pet); !ok {
+			t.Fatal("expected RecordPet to return true")
+		}
+
+		consumer, err := js.CreateOrUpdateConsumer(context.Background(), "PETS", jetstream.ConsumerConfig{
+			FilterSubject: petSubjectForTest,
+			DeliverPolicy: jetstream.DeliverAllPolicy,
+		})
+		if err != nil {
+			t.Fatalf("failed to create consumer: %v", err)
+		}
+
+		msg, err := consumer.Next(jetstream.FetchMaxWait(2 * time.Second))
+		if err != nil {
+			t.Fatalf("expected a message on stream, got error: %v", err)
+		}
+
+		var got pets.Pet
+		if err := json.Unmarshal(msg.Data(), &got); err != nil {
+			t.Fatalf("failed to unmarshal message: %v", err)
+		}
+
+		if got != pet {
+			t.Errorf("published pet mismatch: got %+v, want %+v", got, pet)
+		}
+	})
+
+	t.Run("returns false when JetStream publish fails", func(t *testing.T) {
+		// Use a closed connection to force publish failure
+		srv := runTestNATSServer(t)
+		nc2, _ := nats.Connect(srv.ClientURL())
+		js2, _ := jetstream.New(nc2)
+		js2.CreateStream(context.Background(), jetstream.StreamConfig{
+			Name: "PETS2", Subjects: []string{petSubjectForTest},
+		})
+		store2 := pets.NewNatsPetStore(js2)
+		nc2.Close() // close before publishing
+
+		pet := pets.Pet{Name: "Ghost"}
+		if _, ok := store2.RecordPet(pet); ok {
+			t.Error("expected RecordPet to return false on closed connection")
+		}
+	})
+}
