@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  namespace: petpipeline
+spec:
+  selector:
+    app: clickhouse
+  ports:
+  - port: 8123
+    name: http
+    nodePort: 30123
+  - port: 9000
+    name: native
+  type: NodePort

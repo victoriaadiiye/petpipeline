@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingest
+  namespace: petpipeline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ingest
+  template:
+    metadata:
+      labels:
+        app: ingest
+    spec:
+      initContainers:
+      - name: wait-for-nats
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until wget -qO- http://nats:8222/healthz; do echo "waiting for nats..."; sleep 2; done
+      containers:
+      - name: ingest
+        image: k3d-petpipeline-registry.localhost:5050/petpipeline/ingest:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5000
+        env:
+        - name: NATS_URL
+          value: nats://nats:4222
+        readinessProbe:
+          tcpSocket:
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 5

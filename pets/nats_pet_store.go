@@ -4,11 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-const petSubject = "pets.ingest"
+// subjectForSpecies maps a species name to its NATS subject.
+func subjectForSpecies(species string) string {
+	switch strings.ToLower(species) {
+	case "dog":
+		return "pets.dogs"
+	case "cat":
+		return "pets.cats"
+	default:
+		return "pets.unknown"
+	}
+}
 
 func NewNatsPetStore(js jetstream.JetStream) *NatsPetStore {
 	return &NatsPetStore{js: js}
@@ -23,7 +34,8 @@ func (s *NatsPetStore) RecordPet(ctx context.Context, pet Pet) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("marshal pet: %w", err)
 	}
-	if _, err := s.js.Publish(ctx, petSubject, data); err != nil {
+	subject := subjectForSpecies(pet.Species)
+	if _, err := s.js.Publish(ctx, subject, data); err != nil {
 		return "", fmt.Errorf("publish pet to NATS: %w", err)
 	}
 	return "", nil

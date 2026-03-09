@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	store, err := platform.ConnectClickHouse()
+	store, err := platform.ConnectClickHouseMulti()
 	if err != nil {
 		log.Fatalf("ClickHouse: %v", err)
 	}

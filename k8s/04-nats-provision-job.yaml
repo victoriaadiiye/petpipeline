@@ -1,0 +1,36 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nats-provision
+  namespace: petpipeline
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      initContainers:
+      - name: wait-for-nats
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until wget -qO- http://nats:8222/healthz; do echo "waiting for nats..."; sleep 2; done
+      containers:
+      - name: provision
+        image: natsio/nats-box:latest
+        command:
+        - sh
+        - -c
+        - |
+          nats -s nats://nats:4222 stream add PETS_DOGS \
+            --subjects "pets.dogs" \
+            --storage file \
+            --retention limits \
+            --defaults || true
+          nats -s nats://nats:4222 stream add PETS_CATS \
+            --subjects "pets.cats" \
+            --storage file \
+            --retention limits \
+            --defaults || true
+          echo "NATS streams provisioned"
+      restartPolicy: OnFailure
+  backoffLimit: 5

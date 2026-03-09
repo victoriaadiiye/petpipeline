@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"petpipeline/internal/platform"
@@ -27,6 +28,21 @@ func processMsg(ctx context.Context, msg jetstream.Msg, store pets.PetWriter) er
 }
 
 func main() {
+	stream := os.Getenv("CONSUMER_STREAM")
+	if stream == "" {
+		stream = "PETS_DOGS"
+	}
+	table := os.Getenv("CONSUMER_TABLE")
+	if table == "" {
+		table = "dogs"
+	}
+	consumerName := os.Getenv("CONSUMER_NAME")
+	if consumerName == "" {
+		consumerName = strings.ToLower(stream) + "-consumer"
+	}
+
+	log.Printf("starting consumer: stream=%s table=%s consumer=%s", stream, table, consumerName)
+
 	_, js, natsCleanup, err := platform.ConnectNATS()
 	if err != nil {
 		log.Fatalf("NATS: %v", err)
@@ -36,15 +52,15 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	cons, err := js.CreateOrUpdateConsumer(ctx, "PETS", jetstream.ConsumerConfig{
-		Name:    "pet-consumer",
-		Durable: "pet-consumer",
+	cons, err := js.CreateOrUpdateConsumer(ctx, stream, jetstream.ConsumerConfig{
+		Name:    consumerName,
+		Durable: consumerName,
 	})
 	if err != nil {
 		log.Fatalf("failed to create consumer: %v", err)
 	}
 
-	store, err := platform.ConnectClickHouse()
+	store, err := platform.ConnectClickHouse(table)
 	if err != nil {
 		log.Fatalf("ClickHouse: %v", err)
 	}

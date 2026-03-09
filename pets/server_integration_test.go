@@ -13,7 +13,7 @@ import (
 func TestRecordingPetsAndRetrievingThem(t *testing.T) {
 	db := connectClickHouse(t)
 	db.Exec(context.Background(), "TRUNCATE TABLE pets")
-	store := pets.NewClickHousePetStore(db)
+	store := pets.NewClickHousePetStore(db, "pets")
 	server := pets.NewPetServer(store, store)
 
 	ogaiJSON := `{"name":"ogai","species":"dog","breed":"aussie","age":3,"weight_kg":12}`

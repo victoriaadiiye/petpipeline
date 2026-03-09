@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nats-config
+  namespace: petpipeline
+data:
+  nats-server.conf: |
+    listen: 0.0.0.0:4222
+    server_name: petpipeline-nats
+    http_port: 8222
+
+    jetstream {
+      store_dir: "/data/nats/jetstream"
+      max_mem:   256MB
+      max_file:  1GB
+    }
+
+    max_connections: 256
+    max_payload:     8MB
+    ping_interval:  "20s"
+    ping_max:       3
+    write_deadline: "5s"

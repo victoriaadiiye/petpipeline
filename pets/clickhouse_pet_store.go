@@ -10,19 +10,22 @@ import (
 	"github.com/google/uuid"
 )
 
-func NewClickHousePetStore(db clickhouse.Conn) *ClickHousePetStore {
-	return &ClickHousePetStore{db: db}
+// NewClickHousePetStore creates a store backed by the given ClickHouse table.
+// table must be a trusted, internally-configured value (not user input).
+func NewClickHousePetStore(db clickhouse.Conn, table string) *ClickHousePetStore {
+	return &ClickHousePetStore{db: db, table: table}
 }
 
 type ClickHousePetStore struct {
-	db clickhouse.Conn
+	db    clickhouse.Conn
+	table string
 }
 
 func (s *ClickHousePetStore) RecordPet(ctx context.Context, pet Pet) (string, error) {
 	id := uuid.New()
-	err := s.db.Exec(ctx, `
-		INSERT INTO pets (id, name, species, breed, age, weight_kg, ingested_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+	err := s.db.Exec(ctx, fmt.Sprintf(`
+		INSERT INTO %s (id, name, species, breed, age, weight_kg, ingested_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, s.table),
 		id, pet.Name, pet.Species, pet.Breed, pet.Age, pet.WeightKG, time.Now(),
 	)
 	if err != nil {
@@ -34,7 +37,7 @@ func (s *ClickHousePetStore) RecordPet(ctx context.Context, pet Pet) (string, er
 func (s *ClickHousePetStore) GetPet(ctx context.Context, id string) (Pet, error) {
 	var p Pet
 	err := s.db.QueryRow(ctx,
-		`SELECT name, species, breed, age, weight_kg FROM pets WHERE id = ? LIMIT 1`,
+		fmt.Sprintf(`SELECT name, species, breed, age, weight_kg FROM %s WHERE id = ? LIMIT 1`, s.table),
 		id,
 	).Scan(&p.Name, &p.Species, &p.Breed, &p.Age, &p.WeightKG)
 	if err != nil {
@@ -57,7 +60,7 @@ func (s *ClickHousePetStore) GetAllPets(ctx context.Context, filter PetFilter) (
 		args = append(args, filter.Breed)
 	}
 
-	query := "SELECT name, species, breed, age, weight_kg FROM pets"
+	query := fmt.Sprintf("SELECT name, species, breed, age, weight_kg FROM %s", s.table)
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -79,4 +82,47 @@ func (s *ClickHousePetStore) GetAllPets(ctx context.Context, filter PetFilter) (
 		pets = append(pets, p)
 	}
 	return pets, nil
+}
+
+// SpeciesStore pairs a species name with its ClickHouse store.
+type SpeciesStore struct {
+	Species string
+	Store   *ClickHousePetStore
+}
+
+// MultiPetReader fans out reads across multiple species-specific stores.
+type MultiPetReader struct {
+	stores []SpeciesStore
+}
+
+func NewMultiPetReader(stores ...SpeciesStore) *MultiPetReader {
+	return &MultiPetReader{stores: stores}
+}
+
+// GetPet searches all stores for the given id, returning the first match.
+func (m *MultiPetReader) GetPet(ctx context.Context, id string) (Pet, error) {
+	for _, ss := range m.stores {
+		p, err := ss.Store.GetPet(ctx, id)
+		if err == nil {
+			return p, nil
+		}
+	}
+	return Pet{}, fmt.Errorf("pet %q not found", id)
+}
+
+// GetAllPets merges results across stores. When filter.Species is set only
+// the matching store is queried.
+func (m *MultiPetReader) GetAllPets(ctx context.Context, filter PetFilter) ([]Pet, error) {
+	var all []Pet
+	for _, ss := range m.stores {
+		if filter.Species != "" && !strings.EqualFold(filter.Species, ss.Species) {
+			continue
+		}
+		pets, err := ss.Store.GetAllPets(ctx, filter)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, pets...)
+	}
+	return all, nil
 }

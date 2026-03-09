@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nats
+  namespace: petpipeline
+spec:
+  selector:
+    app: nats
+  ports:
+  - port: 4222
+    name: client
+    nodePort: 30422
+  - port: 8222
+    name: monitoring
+  - port: 6222
+    name: cluster
+  type: NodePort

@@ -38,7 +38,7 @@ func connectClickHouse(t *testing.T) clickhouse.Conn {
 
 func TestClickHousePetStore_RecordPet(t *testing.T) {
 	db := connectClickHouse(t)
-	store := pets.NewClickHousePetStore(db)
+	store := pets.NewClickHousePetStore(db, "pets")
 
 	pet := pets.Pet{Name: "TestBuddy", Species: "Dog", Breed: "Labrador", Age: 3, WeightKG: 30.0}
 	if _, err := store.RecordPet(context.Background(), pet); err != nil {
@@ -48,7 +48,7 @@ func TestClickHousePetStore_RecordPet(t *testing.T) {
 
 func TestClickHousePetStore_GetAllPets(t *testing.T) {
 	db := connectClickHouse(t)
-	store := pets.NewClickHousePetStore(db)
+	store := pets.NewClickHousePetStore(db, "pets")
 
 	pet := pets.Pet{Name: "FilterTestDog", Species: "Dog", Breed: "Poodle", Age: 2, WeightKG: 10.0}
 	store.RecordPet(context.Background(), pet)
@@ -100,7 +100,7 @@ func TestClickHousePetStore_GetAllPets(t *testing.T) {
 
 func TestClickHousePetStore_GetPet(t *testing.T) {
 	db := connectClickHouse(t)
-	store := pets.NewClickHousePetStore(db)
+	store := pets.NewClickHousePetStore(db, "pets")
 
 	t.Run("returns error for non-existent id", func(t *testing.T) {
 		_, err := store.GetPet(context.Background(), "00000000-0000-0000-0000-000000000000")
