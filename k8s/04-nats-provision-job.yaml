@@ -24,12 +24,12 @@ spec:
           nats -s nats://nats:4222 stream add PETS_DOGS \
             --subjects "pets.dogs" \
             --storage file \
-            --retention limits \
+            --retention workqueue \
             --defaults || true
           nats -s nats://nats:4222 stream add PETS_CATS \
             --subjects "pets.cats" \
             --storage file \
-            --retention limits \
+            --retention workqueue \
             --defaults || true
           echo "NATS streams provisioned"
       restartPolicy: OnFailure

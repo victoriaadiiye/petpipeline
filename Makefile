@@ -6,21 +6,9 @@ REGISTRY = k3d-petpipeline-registry.localhost:5050
 
 # ── Docker Compose ──────────────────────────────────────────
 
-# Start everything and provision NATS streams
+# Start everything (NATS streams provisioned by nats-provision container)
 up:
 	docker compose up -d --build
-	nats stream add PETS_DOGS \
-		--subjects "pets.dogs" \
-		--storage file \
-		--retention limits \
-		--defaults \
-		--server nats://localhost:4222 || true
-	nats stream add PETS_CATS \
-		--subjects "pets.cats" \
-		--storage file \
-		--retention limits \
-		--defaults \
-		--server nats://localhost:4222 || true
 	@echo ""
 	@echo "NATS running at        nats://localhost:4222"
 	@echo "NATS monitoring at     http://localhost:8222"
@@ -43,19 +31,19 @@ nats-logs:
 
 # Open a NATS CLI shell
 nats-cli:
-	docker compose exec nats-box nats -s nats://nats:4222
+	docker compose run --rm nats-provision nats -s nats://nats:4222
 
 # List all streams
 streams:
-	docker compose exec nats-box nats -s nats://nats:4222 stream ls
+	docker compose run --rm nats-provision nats -s nats://nats:4222 stream ls
 
 # List consumers (usage: make consumers STREAM=PETS_DOGS)
 consumers:
-	docker compose exec nats-box nats -s nats://nats:4222 consumer ls $(STREAM)
+	docker compose run --rm nats-provision nats -s nats://nats:4222 consumer ls $(STREAM)
 
 # Quick publish (usage: make pub SUBJECT=pets.dogs MSG='{"name":"Rex","species":"Dog"}')
 pub:
-	docker compose exec nats-box nats -s nats://nats:4222 pub $(SUBJECT) '$(MSG)'
+	docker compose run --rm nats-provision nats -s nats://nats:4222 pub $(SUBJECT) '$(MSG)'
 
 # ── ClickHouse ─────────────────────────────────────────────
 

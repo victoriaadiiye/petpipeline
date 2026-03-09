@@ -18,17 +18,28 @@ services:
       timeout: 3s
       retries: 5
 
-  # Optional: NATS CLI for admin/debugging
-  nats-box:
+  nats-provision:
     image: natsio/nats-box:latest
-    container_name: nats-box
+    container_name: nats-provision
     depends_on:
       nats:
         condition: service_healthy
-    stdin_open: true
-    tty: true
+    restart: "no"
     entrypoint: /bin/sh
-    command: ["-c", "sleep infinity"]
+    command:
+      - -c
+      - |
+        nats -s nats://nats:4222 stream add PETS_DOGS \
+          --subjects "pets.dogs" \
+          --storage file \
+          --retention workqueue \
+          --defaults || true
+        nats -s nats://nats:4222 stream add PETS_CATS \
+          --subjects "pets.cats" \
+          --storage file \
+          --retention workqueue \
+          --defaults || true
+        echo "NATS streams provisioned"
 
   # ── ClickHouse ────────────────────────────────────────────
   clickhouse:
