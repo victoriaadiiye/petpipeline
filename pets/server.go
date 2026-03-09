@@ -1,12 +1,13 @@
 package pets
 
 import (
+	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 )
 
-// PetServer is an HTTP interface for pet information.
 type PetServer struct {
 	Writer PetWriter
 	Reader PetReader
@@ -16,36 +17,48 @@ type PetServer struct {
 func NewPetServer(writer PetWriter, reader PetReader) *PetServer {
 	p := &PetServer{Writer: writer, Reader: reader}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /pets", func(w http.ResponseWriter, r *http.Request) {
-		filter := PetFilter{Limit: 50}
-		if s := r.URL.Query().Get("limit"); s != "" {
-			if n, err := strconv.Atoi(s); err == nil {
-				filter.Limit = n
+
+	if reader != nil {
+		mux.HandleFunc("GET /pets", func(w http.ResponseWriter, r *http.Request) {
+			filter := PetFilter{Limit: 50}
+			if s := r.URL.Query().Get("limit"); s != "" {
+				if n, err := strconv.Atoi(s); err == nil {
+					filter.Limit = n
+				}
 			}
-		}
-		filter.Species = r.URL.Query().Get("species")
-		filter.Breed = r.URL.Query().Get("breed")
-		p.ListPets(w, filter)
-	})
-	mux.HandleFunc("GET /pets/{id}", func(w http.ResponseWriter, r *http.Request) {
-		p.ShowPet(w, r.PathValue("id"))
-	})
-	mux.HandleFunc("POST /ingest", func(w http.ResponseWriter, r *http.Request) {
-		p.AddPet(w, r)
-	})
+			filter.Species = r.URL.Query().Get("species")
+			filter.Breed = r.URL.Query().Get("breed")
+			p.ListPets(w, r.Context(), filter)
+		})
+		mux.HandleFunc("GET /pets/{id}", func(w http.ResponseWriter, r *http.Request) {
+			p.ShowPet(w, r.Context(), r.PathValue("id"))
+		})
+	}
+
+	if writer != nil {
+		mux.HandleFunc("POST /ingest", func(w http.ResponseWriter, r *http.Request) {
+			p.AddPet(w, r)
+		})
+	}
+
 	p.mux = mux
 	return p
-
 }
 
 func (p *PetServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.mux.ServeHTTP(w, r)
 }
 
-func (p *PetServer) ListPets(w http.ResponseWriter, filter PetFilter) {
-	pets, count := p.Reader.GetAllPets(filter)
+func (p *PetServer) ListPets(w http.ResponseWriter, ctx context.Context, filter PetFilter) {
+	pets, err := p.Reader.GetAllPets(ctx, filter)
 	w.Header().Set("Content-Type", "application/json")
-	if count == 0 {
+	if err != nil {
+		log.Printf("ListPets: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to list pets"})
+		return
+	}
+	if len(pets) == 0 {
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]string{"error": "no pets found"})
 		return
@@ -53,10 +66,10 @@ func (p *PetServer) ListPets(w http.ResponseWriter, filter PetFilter) {
 	json.NewEncoder(w).Encode(pets)
 }
 
-func (p *PetServer) ShowPet(w http.ResponseWriter, id string) {
-	pet, found := p.Reader.GetPet(id)
+func (p *PetServer) ShowPet(w http.ResponseWriter, ctx context.Context, id string) {
+	pet, err := p.Reader.GetPet(ctx, id)
 	w.Header().Set("Content-Type", "application/json")
-	if !found {
+	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]string{"error": "pet not found"})
 		return
@@ -79,8 +92,9 @@ func (p *PetServer) AddPet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, ok := p.Writer.RecordPet(pet)
-	if !ok {
+	id, err := p.Writer.RecordPet(r.Context(), pet)
+	if err != nil {
+		log.Printf("AddPet: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to record pet"})
 		return

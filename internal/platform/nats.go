@@ -1,6 +1,7 @@
-package infra
+package platform
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -9,7 +10,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-func ConnectNATS() (*nats.Conn, jetstream.JetStream, func()) {
+func ConnectNATS() (*nats.Conn, jetstream.JetStream, func(), error) {
 	natsURL := os.Getenv("NATS_URL")
 	if natsURL == "" {
 		natsURL = nats.DefaultURL
@@ -28,17 +29,18 @@ func ConnectNATS() (*nats.Conn, jetstream.JetStream, func()) {
 		}),
 	)
 	if err != nil {
-		log.Fatalf("failed to connect to NATS: %v", err)
+		return nil, nil, nil, fmt.Errorf("connect to NATS: %w", err)
 	}
 
 	js, err := jetstream.New(nc)
 	if err != nil {
-		log.Fatalf("failed to create JetStream context: %v", err)
+		nc.Close()
+		return nil, nil, nil, fmt.Errorf("create JetStream context: %w", err)
 	}
 	log.Printf("connected to NATS at %s", natsURL)
 
 	cleanup := func() {
 		nc.Close()
 	}
-	return nc, js, cleanup
+	return nc, js, cleanup, nil
 }

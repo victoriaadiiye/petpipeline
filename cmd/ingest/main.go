@@ -4,12 +4,15 @@ import (
 	"log"
 	"net/http"
 
-	"petpipeline/internal/infra"
+	"petpipeline/internal/platform"
 	"petpipeline/pets"
 )
 
 func main() {
-	_, js, natsCleanup := infra.ConnectNATS()
+	_, js, natsCleanup, err := platform.ConnectNATS()
+	if err != nil {
+		log.Fatalf("NATS: %v", err)
+	}
 	defer natsCleanup()
 
 	store := pets.NewNatsPetStore(js)

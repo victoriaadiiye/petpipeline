@@ -3,60 +3,74 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
-	"petpipeline/internal/infra"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"petpipeline/internal/platform"
 	"petpipeline/pets"
 
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-func processMsg(msg jetstream.Msg, store pets.PetWriter) bool {
+func processMsg(ctx context.Context, msg jetstream.Msg, store pets.PetWriter) error {
 	var pet pets.Pet
 	if err := json.Unmarshal(msg.Data(), &pet); err != nil {
-		return false // caller will Nak or Term
+		return fmt.Errorf("unmarshal pet: %w", err)
 	}
-	_, ok := store.RecordPet(pet)
-	return ok
+	if _, err := store.RecordPet(ctx, pet); err != nil {
+		return fmt.Errorf("record pet: %w", err)
+	}
+	return nil
 }
 
 func main() {
-	_, js, natsCleanup := infra.ConnectNATS()
+	_, js, natsCleanup, err := platform.ConnectNATS()
+	if err != nil {
+		log.Fatalf("NATS: %v", err)
+	}
 	defer natsCleanup()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Bind to the existing PETS stream as a consumer
 	cons, err := js.CreateOrUpdateConsumer(ctx, "PETS", jetstream.ConsumerConfig{
 		Name:    "pet-consumer",
-		Durable: "pet-consumer", // durable = survives restarts
+		Durable: "pet-consumer",
 	})
 	if err != nil {
 		log.Fatalf("failed to create consumer: %v", err)
 	}
 
-	store := infra.ConnectClickHouse()
+	store, err := platform.ConnectClickHouse()
+	if err != nil {
+		log.Fatalf("ClickHouse: %v", err)
+	}
 
 	cc, err := cons.Consume(func(msg jetstream.Msg) {
-		success := processMsg(msg, store)
-		if success {
-			log.Println("Message successfully processed and acked.")
-			msg.Ack()
+		if err := processMsg(ctx, msg, store); err != nil {
+			meta, metaErr := msg.Metadata()
+			if metaErr != nil || meta.NumDelivered >= 5 {
+				log.Printf("Message failed after max attempts, terminating: %v", err)
+				msg.Term()
+				return
+			}
+			log.Printf("Message failed (attempt %d/5), nacking for retry: %v", meta.NumDelivered, err)
+			msg.Nak()
 			return
 		}
-		meta, err := msg.Metadata()
-		if err != nil || meta.NumDelivered >= 5 {
-			log.Printf("Message failed after %d attempts, terminating.", meta.NumDelivered)
-			msg.Term()
-			return
-		}
-		log.Printf("Message failed (attempt %d/5), nacking for retry.", meta.NumDelivered)
-		msg.Nak()
+		log.Println("Message successfully processed and acked.")
+		msg.Ack()
 	})
 	if err != nil {
 		log.Fatalf("failed to start consumer: %v", err)
 	}
 	defer cc.Stop()
 
-	select {}
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	<-sig
+	log.Println("shutting down consumer")
 }

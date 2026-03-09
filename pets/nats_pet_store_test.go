@@ -62,10 +62,10 @@ const petSubjectForTest = "pets.ingest"
 func TestNatsPetStore_RecordPet(t *testing.T) {
 	store, js := setupNatsStore(t)
 
-	t.Run("publishes pet to stream and returns true", func(t *testing.T) {
-		pet := pets.Pet{Name: "Buddy", Species: "Dog", Breed: "Labrador", Age: 3, Weight_KG: 30.0}
-		if _, ok := store.RecordPet(pet); !ok {
-			t.Fatal("expected RecordPet to return true")
+	t.Run("publishes pet to stream", func(t *testing.T) {
+		pet := pets.Pet{Name: "Buddy", Species: "Dog", Breed: "Labrador", Age: 3, WeightKG: 30.0}
+		if _, err := store.RecordPet(context.Background(), pet); err != nil {
+			t.Fatalf("RecordPet failed: %v", err)
 		}
 
 		consumer, err := js.CreateOrUpdateConsumer(context.Background(), "PETS", jetstream.ConsumerConfig{
@@ -91,7 +91,7 @@ func TestNatsPetStore_RecordPet(t *testing.T) {
 		}
 	})
 
-	t.Run("returns false when JetStream publish fails", func(t *testing.T) {
+	t.Run("returns error when JetStream publish fails", func(t *testing.T) {
 		// Use a closed connection to force publish failure
 		srv := runTestNATSServer(t)
 		nc2, _ := nats.Connect(srv.ClientURL())
@@ -103,8 +103,8 @@ func TestNatsPetStore_RecordPet(t *testing.T) {
 		nc2.Close() // close before publishing
 
 		pet := pets.Pet{Name: "Ghost"}
-		if _, ok := store2.RecordPet(pet); ok {
-			t.Error("expected RecordPet to return false on closed connection")
+		if _, err := store2.RecordPet(context.Background(), pet); err == nil {
+			t.Error("expected error on closed connection")
 		}
 	})
 }

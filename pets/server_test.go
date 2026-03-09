@@ -1,11 +1,15 @@
 package pets_test
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 
 	"petpipeline/pets"
 )
@@ -15,23 +19,26 @@ type StubPetStore struct {
 	addCalls []pets.Pet
 }
 
-func (s *StubPetStore) GetPet(id string) (pets.Pet, bool) {
+func (s *StubPetStore) GetPet(_ context.Context, id string) (pets.Pet, error) {
 	pet, found := s.pets[id]
-	return pet, found
+	if !found {
+		return pets.Pet{}, fmt.Errorf("pet %q not found", id)
+	}
+	return pet, nil
 }
 
-func (s *StubPetStore) RecordPet(pet pets.Pet) (string, bool) {
+func (s *StubPetStore) RecordPet(_ context.Context, pet pets.Pet) (string, error) {
 	s.addCalls = append(s.addCalls, pet)
 	s.pets[pet.Name] = pet
-	return pet.Name, true
+	return pet.Name, nil
 }
 
-func (s *StubPetStore) GetAllPets(filter pets.PetFilter) ([]pets.Pet, int) {
+func (s *StubPetStore) GetAllPets(_ context.Context, filter pets.PetFilter) ([]pets.Pet, error) {
 	result := make([]pets.Pet, 0, len(s.pets))
 	for _, pet := range s.pets {
 		result = append(result, pet)
 	}
-	return result, len(result)
+	return result, nil
 }
 
 func TestGETPets(t *testing.T) {
@@ -43,33 +50,29 @@ func TestGETPets(t *testing.T) {
 	}
 	server := pets.NewPetServer(store, store)
 
-	tests := []struct {
-		name               string
+	tests := map[string]struct {
 		petName            string
 		expectedHTTPStatus int
 		expectedPet        *pets.Pet
 	}{
-		{
-			name:               "Returns Buddy's info",
+		"Returns Buddy's info": {
 			petName:            "Buddy",
 			expectedHTTPStatus: http.StatusOK,
 			expectedPet:        &pets.Pet{Name: "Buddy", Species: "Dog", Age: 3},
 		},
-		{
-			name:               "Returns Milo's info",
+		"Returns Milo's info": {
 			petName:            "Milo",
 			expectedHTTPStatus: http.StatusOK,
 			expectedPet:        &pets.Pet{Name: "Milo", Species: "Cat", Age: 5},
 		},
-		{
-			name:               "Returns 404 on missing pets",
+		"Returns 404 on missing pets": {
 			petName:            "Ghost",
 			expectedHTTPStatus: http.StatusNotFound,
 			expectedPet:        nil,
 		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
 			request := newGetPetRequest(tt.petName)
 			response := httptest.NewRecorder()
 
@@ -158,8 +161,8 @@ func assertStatus(t testing.TB, got, want int) {
 
 func assertPet(t testing.TB, got, want pets.Pet) {
 	t.Helper()
-	if got != want {
-		t.Errorf("pet mismatch, got %+v want %+v", got, want)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("pet mismatch (-want +got):\n%s", diff)
 	}
 }
 

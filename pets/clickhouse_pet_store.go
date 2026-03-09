@@ -2,7 +2,7 @@ package pets
 
 import (
 	"context"
-	"log"
+	"fmt"
 	"strings"
 	"time"
 
@@ -10,48 +10,41 @@ import (
 	"github.com/google/uuid"
 )
 
-func NewClickHousePetStore(db clickhouse.Conn) (*ClickHousePetStore, error) {
-	return &ClickHousePetStore{db: db}, nil
+func NewClickHousePetStore(db clickhouse.Conn) *ClickHousePetStore {
+	return &ClickHousePetStore{db: db}
 }
 
 type ClickHousePetStore struct {
 	db clickhouse.Conn
 }
 
-func (s *ClickHousePetStore) RecordPet(pet Pet) (string, bool) {
+func (s *ClickHousePetStore) RecordPet(ctx context.Context, pet Pet) (string, error) {
 	id := uuid.New()
-	err := s.db.Exec(context.Background(), `
+	err := s.db.Exec(ctx, `
 		INSERT INTO pets (id, name, species, breed, age, weight_kg, ingested_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id,
-		pet.Name,
-		pet.Species,
-		pet.Breed,
-		pet.Age,
-		pet.Weight_KG,
-		time.Now(),
+		id, pet.Name, pet.Species, pet.Breed, pet.Age, pet.WeightKG, time.Now(),
 	)
 	if err != nil {
-		log.Printf("failed to insert pet %q: %v", pet.Name, err)
-		return "", false
+		return "", fmt.Errorf("insert pet %q: %w", pet.Name, err)
 	}
-	return id.String(), true
+	return id.String(), nil
 }
 
-func (s *ClickHousePetStore) GetPet(id string) (Pet, bool) {
+func (s *ClickHousePetStore) GetPet(ctx context.Context, id string) (Pet, error) {
 	var p Pet
-	err := s.db.QueryRow(context.Background(),
+	err := s.db.QueryRow(ctx,
 		`SELECT name, species, breed, age, weight_kg FROM pets WHERE id = ? LIMIT 1`,
 		id,
-	).Scan(&p.Name, &p.Species, &p.Breed, &p.Age, &p.Weight_KG)
+	).Scan(&p.Name, &p.Species, &p.Breed, &p.Age, &p.WeightKG)
 	if err != nil {
-		return Pet{}, false
+		return Pet{}, fmt.Errorf("get pet %q: %w", id, err)
 	}
 	p.ID = id
-	return p, true
+	return p, nil
 }
 
-func (s *ClickHousePetStore) GetAllPets(filter PetFilter) ([]Pet, int) {
+func (s *ClickHousePetStore) GetAllPets(ctx context.Context, filter PetFilter) ([]Pet, error) {
 	var conditions []string
 	var args []any
 
@@ -71,22 +64,19 @@ func (s *ClickHousePetStore) GetAllPets(filter PetFilter) ([]Pet, int) {
 	query += " ORDER BY ingested_at DESC LIMIT ?"
 	args = append(args, filter.Limit)
 
-	rows, err := s.db.Query(context.Background(), query, args...)
-
+	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
-		log.Printf("GetAllPets query failed: %v", err)
-		return nil, 0
+		return nil, fmt.Errorf("query pets: %w", err)
 	}
 	defer rows.Close()
 
 	var pets []Pet
 	for rows.Next() {
 		var p Pet
-		if err := rows.Scan(&p.Name, &p.Species, &p.Breed, &p.Age, &p.Weight_KG); err != nil {
-			log.Printf("GetAllPets scan failed: %v", err)
-			return nil, 0
+		if err := rows.Scan(&p.Name, &p.Species, &p.Breed, &p.Age, &p.WeightKG); err != nil {
+			return nil, fmt.Errorf("scan pet: %w", err)
 		}
 		pets = append(pets, p)
 	}
-	return pets, len(pets)
+	return pets, nil
 }

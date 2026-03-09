@@ -13,7 +13,7 @@ import (
 func TestRecordingPetsAndRetrievingThem(t *testing.T) {
 	db := connectClickHouse(t)
 	db.Exec(context.Background(), "TRUNCATE TABLE pets")
-	store, _ := pets.NewClickHousePetStore(db)
+	store := pets.NewClickHousePetStore(db)
 	server := pets.NewPetServer(store, store)
 
 	ogaiJSON := `{"name":"ogai","species":"dog","breed":"aussie","age":3,"weight_kg":12}`
@@ -40,7 +40,7 @@ func TestRecordingPetsAndRetrievingThem(t *testing.T) {
 
 	var got pets.Pet
 	json.NewDecoder(response.Body).Decode(&got)
-	assertPet(t, got, pets.Pet{ID: ogai.ID, Name: "ogai", Species: "dog", Breed: "aussie", Age: 3, Weight_KG: 12})
+	assertPet(t, got, pets.Pet{ID: ogai.ID, Name: "ogai", Species: "dog", Breed: "aussie", Age: 3, WeightKG: 12})
 
 	// List all pets
 	response = httptest.NewRecorder()

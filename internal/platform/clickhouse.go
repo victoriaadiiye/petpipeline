@@ -1,7 +1,8 @@
-package infra
+package platform
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"petpipeline/pets"
@@ -10,7 +11,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 )
 
-func ConnectClickHouse() *pets.ClickHousePetStore {
+func ConnectClickHouse() (*pets.ClickHousePetStore, error) {
 	chAddr := os.Getenv("CLICKHOUSE_ADDR")
 	if chAddr == "" {
 		chAddr = "127.0.0.1:9000"
@@ -31,16 +32,12 @@ func ConnectClickHouse() *pets.ClickHousePetStore {
 		ConnMaxLifetime: 10 * time.Minute,
 	})
 	if err != nil {
-		log.Fatalf("failed to open clickhouse: %v", err)
+		return nil, fmt.Errorf("open clickhouse: %w", err)
 	}
 	if err := conn.Ping(context.Background()); err != nil {
-		log.Fatalf("clickhouse ping: %v", err)
+		return nil, fmt.Errorf("ping clickhouse: %w", err)
 	}
 
-	store, err := pets.NewClickHousePetStore(conn)
-	if err != nil {
-		log.Fatalf("failed to create clickhouse pet store: %v", err)
-	}
 	log.Printf("connected to ClickHouse at %s", chAddr)
-	return store
+	return pets.NewClickHousePetStore(conn), nil
 }

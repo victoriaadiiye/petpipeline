@@ -4,12 +4,15 @@ import (
 	"log"
 	"net/http"
 
-	"petpipeline/internal/infra"
+	"petpipeline/internal/platform"
 	"petpipeline/pets"
 )
 
 func main() {
-	store := infra.ConnectClickHouse()
+	store, err := platform.ConnectClickHouse()
+	if err != nil {
+		log.Fatalf("ClickHouse: %v", err)
+	}
 	server := pets.NewPetServer(nil, store)
 
 	log.Printf("Pet api server listening on :5001")

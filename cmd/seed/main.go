@@ -76,7 +76,7 @@ func generatePets(n int) []pets.Pet {
 			Species:   b.species,
 			Breed:     b.breed,
 			Age:       uint8(1 + rand.Intn(15)),
-			Weight_KG: float32(int(weight*10)) / 10,
+			WeightKG: float32(int(weight*10)) / 10,
 		}
 	}
 	return result

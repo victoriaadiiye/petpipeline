@@ -3,7 +3,7 @@ package pets
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"fmt"
 
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -18,17 +18,13 @@ type NatsPetStore struct {
 	js jetstream.JetStream
 }
 
-// RecordPet publishes a pet record to the NATS stream.
-func (s *NatsPetStore) RecordPet(pet Pet) (string, bool) {
+func (s *NatsPetStore) RecordPet(ctx context.Context, pet Pet) (string, error) {
 	data, err := json.Marshal(pet)
 	if err != nil {
-		log.Printf("failed to marshal pet: %v", err)
-		return "", false
+		return "", fmt.Errorf("marshal pet: %w", err)
 	}
-
-	if _, err := s.js.Publish(context.Background(), petSubject, data); err != nil {
-		log.Printf("failed to publish pet to NATS: %v", err)
-		return "", false
+	if _, err := s.js.Publish(ctx, petSubject, data); err != nil {
+		return "", fmt.Errorf("publish pet to NATS: %w", err)
 	}
-	return "", true
+	return "", nil
 }
